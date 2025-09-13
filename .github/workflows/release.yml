@@ -26,3 +26,32 @@ jobs:
           files: dist/churchkite-connector.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish to ChurchKite Admin
+        uses: actions/github-script@v7
+        env:
+          PUBLISH_URL: ${{ secrets.CK_PUBLISH_URL }}
+          PUBLISH_KEY: ${{ secrets.CK_PUBLISH_KEY }}
+        with:
+          script: |
+            const slug = 'churchkite-connector';
+            const tag = process.env.GITHUB_REF_NAME || context.ref.replace('refs/tags/','');
+            const version = tag.replace(/^v/i,'');
+            const { data: rel } = await github.rest.repos.getReleaseByTag({ owner: context.repo.owner, repo: context.repo.repo, tag });
+            const asset = (rel.assets || []).find(a => a.name === 'churchkite-connector.zip');
+            if (!asset) core.setFailed('Release asset not found: churchkite-connector.zip');
+            const payload = {
+              slug,
+              version,
+              url: rel.html_url,
+              assetApiUrl: asset.url,
+              changelog: rel.body || '',
+            };
+            const res = await fetch(process.env.PUBLISH_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-publish-key': process.env.PUBLISH_KEY },
+              body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              core.setFailed(`Publish failed: ${res.status} ${text}`);
+            }
