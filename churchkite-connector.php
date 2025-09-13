@@ -166,6 +166,81 @@ function ckc_get_plugin_version() {
     return isset($data['Version']) ? $data['Version'] : '0.0.0';
 }
 
+// --- Centralized updater for ChurchKite-managed and GitHub-declared plugins ---
+add_filter('pre_set_site_transient_update_plugins', 'ckc_ck_managed_updates', 12);
+add_filter('plugins_api', 'ckc_ck_plugins_api', 12, 3);
+
+function ckc_admin_base() {
+    return defined('CHURCHKITE_ADMIN_URL') ? rtrim(CHURCHKITE_ADMIN_URL, '/') : 'https://churchkite-plugin-admin.netlify.app';
+}
+
+function ckc_scan_ck_managed() {
+    if (!function_exists('get_plugins')) require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    $plugins = get_plugins();
+    $out = array();
+    foreach ($plugins as $file => $data) {
+        $uri = isset($data['UpdateURI']) ? trim($data['UpdateURI']) : '';
+        if ($uri && stripos($uri, 'churchkite://') === 0) {
+            $slug = substr($uri, strlen('churchkite://'));
+            $out[$slug] = array(
+                'file'    => $file,
+                'slug'    => $slug,
+                'name'    => isset($data['Name']) ? $data['Name'] : $slug,
+                'version' => isset($data['Version']) ? $data['Version'] : '',
+            );
+        }
+    }
+    return $out;
+}
+
+function ckc_ck_check($slug) {
+    $url = ckc_admin_base() . '/api/updates/check?slug=' . rawurlencode($slug);
+    $resp = wp_remote_get($url, array('timeout' => 15, 'headers' => array('User-Agent' => 'ChurchKite/Connector')));
+    if (is_wp_error($resp) || wp_remote_retrieve_response_code($resp) !== 200) return null;
+    $data = json_decode(wp_remote_retrieve_body($resp), true);
+    return is_array($data) ? $data : null;
+}
+
+function ckc_ck_managed_updates($transient) {
+    if (empty($transient) || !is_object($transient)) return $transient;
+    $managed = ckc_scan_ck_managed();
+    foreach ($managed as $slug => $p) {
+        $info = ckc_ck_check($slug);
+        if (!$info || empty($info['version'])) continue;
+        if (version_compare($info['version'], $p['version'], '>')) {
+            $transient->response[$p['file']] = (object) array(
+                'slug'        => $slug,
+                'plugin'      => $p['file'],
+                'new_version' => $info['version'],
+                'url'         => isset($info['url']) ? $info['url'] : '',
+                'package'     => isset($info['download']) ? $info['download'] : '',
+            );
+        }
+    }
+    return $transient;
+}
+
+function ckc_ck_plugins_api($result, $action, $args) {
+    if ($action !== 'plugin_information' || empty($args->slug)) return $result;
+    $managed = ckc_scan_ck_managed();
+    if (!isset($managed[$args->slug])) return $result;
+    $p = $managed[$args->slug];
+    $info = ckc_ck_check($args->slug);
+    $version = $info && !empty($info['version']) ? $info['version'] : $p['version'];
+    return (object) array(
+        'name'         => $p['name'],
+        'slug'         => $args->slug,
+        'version'      => $version,
+        'author'       => '<a href="https://github.com/churchkite-metron">ChurchKite</a>',
+        'sections'     => array(
+            'description' => 'Managed by ChurchKite',
+            'changelog'   => isset($info['changelog']) ? wp_kses_post(nl2br($info['changelog'])) : '',
+        ),
+        'download_link'=> isset($info['download']) ? $info['download'] : '',
+        'homepage'     => isset($info['url']) ? $info['url'] : '',
+    );
+}
+
 function ckc_latest_release() {
     $cache_key = 'ckc_latest_release_info';
     $cached = get_site_transient($cache_key);
