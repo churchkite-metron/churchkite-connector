@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Author: ChurchKite
  * Update URI: https://github.com/churchkite-metron/churchkite-connector
  */
@@ -179,7 +179,18 @@ function ckc_latest_release() {
     if (!is_array($data) || empty($data['tag_name'])) return null;
     $tag = $data['tag_name'];
     $tag = ltrim($tag, 'vV');
-    $zip = isset($data['zipball_url']) ? $data['zipball_url'] : ('https://github.com/churchkite-metron/churchkite-connector/archive/refs/tags/' . $data['tag_name'] . '.zip');
+    $zip = '';
+    if (!empty($data['assets']) && is_array($data['assets'])) {
+        foreach ($data['assets'] as $asset) {
+            if (!empty($asset['name']) && $asset['name'] === 'churchkite-connector.zip' && !empty($asset['browser_download_url'])) {
+                $zip = $asset['browser_download_url'];
+                break;
+            }
+        }
+    }
+    if (!$zip) {
+        $zip = isset($data['zipball_url']) ? $data['zipball_url'] : ('https://github.com/churchkite-metron/churchkite-connector/archive/refs/tags/' . $data['tag_name'] . '.zip');
+    }
     $out = array(
         'version' => $tag,
         'zip' => $zip,
