@@ -24,6 +24,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/churchkite-connector.zip
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish to ChurchKite Admin
