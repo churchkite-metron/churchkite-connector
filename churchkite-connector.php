@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.1.10
+ * Version: 0.1.11
  * Author: ChurchKite
  * Update URI: https://github.com/churchkite-metron/churchkite-connector
  */
@@ -69,6 +69,7 @@ function ckc_collect_inventory() {
             'name' => isset($data['Name']) ? $data['Name'] : $slug,
             'version' => isset($data['Version']) ? $data['Version'] : '',
             'active' => in_array($file, $active, true),
+            'updateUri' => isset($data['UpdateURI']) ? trim($data['UpdateURI']) : '',
         );
         if (isset($updatesResp[$file])) {
             $item['updateAvailable'] = true;
