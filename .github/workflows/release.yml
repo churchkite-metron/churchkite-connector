@@ -56,3 +56,19 @@ jobs:
               const text = await res.text();
               core.setFailed(`Publish failed: ${res.status} ${text}`);
             }
+      - name: Upload asset to ChurchKite Admin
+        env:
+          PUBLISH_URL: ${{ secrets.CK_PUBLISH_URL }}
+          PUBLISH_KEY: ${{ secrets.CK_PUBLISH_KEY }}
+        run: |
+          set -e
+          SLUG="churchkite-connector"
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          UPLOAD_URL="${PUBLISH_URL/publish/upload}"
+          if [ ! -f "dist/${SLUG}.zip" ]; then echo "Zip not found: dist/${SLUG}.zip"; ls -la dist; exit 1; fi
+          curl -sSf -X POST \
+            -H "x-publish-key: ${PUBLISH_KEY}" \
+            -H "Content-Type: application/zip" \
+            --data-binary @"dist/${SLUG}.zip" \
+            "${UPLOAD_URL}?slug=${SLUG}&version=${VER}"
