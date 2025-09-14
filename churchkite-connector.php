@@ -2,9 +2,9 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.1.11
+ * Version: 0.1.12
  * Author: ChurchKite
- * Update URI: https://github.com/churchkite-metron/churchkite-connector
+ * Update URI: churchkite://churchkite-connector
  */
 
 if (!defined('ABSPATH')) exit;
