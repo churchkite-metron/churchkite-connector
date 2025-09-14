@@ -17,3 +17,9 @@ How it works
 
 Extensibility
 - Plugins can add richer metadata via `add_filter('churchkite_connector_manifest', ...)` keyed by plugin slug
+
+Release & Updates
+- Tag as `vX.Y.Z` to build `dist/churchkite-connector.zip` and create a GitHub Release.
+- CI publishes version metadata to ChurchKite Admin and uploads the ZIP to Admin Blobs.
+- CI verifies Admin download by running `unzip -t` on the served ZIP.
+- Admin functions are configured to return ZIPs in binary mode to avoid corruption.

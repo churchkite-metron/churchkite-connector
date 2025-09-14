@@ -65,10 +65,18 @@ jobs:
           SLUG="churchkite-connector"
           TAG="${GITHUB_REF_NAME}"
           VER="${TAG#v}"
-          UPLOAD_URL="${PUBLISH_URL/publish/upload}"
+          UPLOAD_URL="${PUBLISH_URL/publish/upload/binary}"
           if [ ! -f "dist/${SLUG}.zip" ]; then echo "Zip not found: dist/${SLUG}.zip"; ls -la dist; exit 1; fi
           curl -sSf -X POST \
             -H "x-publish-key: ${PUBLISH_KEY}" \
             -H "Content-Type: application/zip" \
             --data-binary @"dist/${SLUG}.zip" \
             "${UPLOAD_URL}?slug=${SLUG}&version=${VER}"
+      - name: Verify Admin download integrity
+        run: |
+          set -e
+          SITE="https://churchkite-plugin-admin.netlify.app"
+          curl -sS -D - "$SITE/api/updates/check?slug=churchkite-connector"
+          curl -sSf -o /tmp/ckc.zip "$SITE/api/updates/download?slug=churchkite-connector"
+          wc -c /tmp/ckc.zip
+          unzip -t /tmp/ckc.zip
