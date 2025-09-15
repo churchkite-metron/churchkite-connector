@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.1.13
+ * Version: 0.1.14
  * Author: ChurchKite
  * Update URI: https://github.com/churchkite-metron/churchkite-connector
  */
@@ -281,17 +281,28 @@ function ckc_check_for_update($transient) {
     if (empty($transient) || !is_object($transient)) return $transient;
     $plugin_file = plugin_basename(__FILE__);
     $current = ckc_get_plugin_version();
-    $latest = ckc_latest_release();
-    if (!$latest || empty($latest['version'])) return $transient;
-    if (version_compare($latest['version'], $current, '>')) {
-        $update = (object) array(
-            'slug' => 'churchkite-connector',
-            'plugin' => $plugin_file,
-            'new_version' => $latest['version'],
-            'url' => $latest['url'],
-            'package' => $latest['zip'],
+    // Prefer Admin-managed updates for the connector
+    $adminInfo = ckc_ck_check('churchkite-connector');
+    if (is_array($adminInfo) && !empty($adminInfo['version']) && version_compare($adminInfo['version'], $current, '>')) {
+        $transient->response[$plugin_file] = (object) array(
+            'slug'        => 'churchkite-connector',
+            'plugin'      => $plugin_file,
+            'new_version' => $adminInfo['version'],
+            'url'         => isset($adminInfo['url']) ? $adminInfo['url'] : '',
+            'package'     => isset($adminInfo['download']) ? $adminInfo['download'] : '',
         );
-        $transient->response[$plugin_file] = $update;
+        return $transient;
+    }
+    // Fallback to GitHub latest release if Admin not available
+    $latest = ckc_latest_release();
+    if ($latest && !empty($latest['version']) && version_compare($latest['version'], $current, '>')) {
+        $transient->response[$plugin_file] = (object) array(
+            'slug'        => 'churchkite-connector',
+            'plugin'      => $plugin_file,
+            'new_version' => $latest['version'],
+            'url'         => $latest['url'],
+            'package'     => $latest['zip'],
+        );
     }
     return $transient;
 }
@@ -300,18 +311,32 @@ function ckc_plugins_api($result, $action, $args) {
     if ($action !== 'plugin_information') return $result;
     if (!isset($args->slug) || $args->slug !== 'churchkite-connector') return $result;
     $current = ckc_get_plugin_version();
+    $adminInfo = ckc_ck_check('churchkite-connector');
+    if (is_array($adminInfo) && !empty($adminInfo['version'])) {
+        return (object) array(
+            'name'         => 'ChurchKite Connector',
+            'slug'         => 'churchkite-connector',
+            'version'      => $adminInfo['version'],
+            'author'       => '<a href="https://github.com/churchkite-metron">ChurchKite</a>',
+            'sections'     => array(
+                'description' => 'Registers/verifies the site with ChurchKite Admin and reports plugin inventory and heartbeats.',
+                'changelog'   => isset($adminInfo['changelog']) ? wp_kses_post(nl2br($adminInfo['changelog'])) : '',
+            ),
+            'download_link'=> isset($adminInfo['download']) ? $adminInfo['download'] : '',
+            'homepage'     => isset($adminInfo['url']) ? $adminInfo['url'] : 'https://github.com/churchkite-metron/churchkite-connector',
+        );
+    }
     $latest = ckc_latest_release();
-    $info = (object) array(
-        'name' => 'ChurchKite Connector',
-        'slug' => 'churchkite-connector',
-        'version' => $latest && !empty($latest['version']) ? $latest['version'] : $current,
-        'author' => '<a href="https://github.com/churchkite-metron">ChurchKite</a>',
-        'homepage' => 'https://github.com/churchkite-metron/churchkite-connector',
-        'sections' => array(
+    return (object) array(
+        'name'         => 'ChurchKite Connector',
+        'slug'         => 'churchkite-connector',
+        'version'      => $latest && !empty($latest['version']) ? $latest['version'] : $current,
+        'author'       => '<a href="https://github.com/churchkite-metron">ChurchKite</a>',
+        'sections'     => array(
             'description' => 'Registers/verifies the site with ChurchKite Admin and reports plugin inventory and heartbeats.',
-            'changelog' => $latest && !empty($latest['changelog']) ? wp_kses_post(nl2br($latest['changelog'])) : 'See GitHub releases.',
+            'changelog'   => $latest && !empty($latest['changelog']) ? wp_kses_post(nl2br($latest['changelog'])) : 'See GitHub releases.',
         ),
-        'download_link' => $latest ? $latest['zip'] : '',
+        'download_link'=> $latest ? $latest['zip'] : '',
+        'homepage'     => 'https://github.com/churchkite-metron/churchkite-connector',
     );
-    return $info;
 }
