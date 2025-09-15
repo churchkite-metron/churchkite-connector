@@ -32,6 +32,7 @@ add_action('ckc_daily_heartbeat', 'ckc_heartbeat');
 // Refresh inventory on plugin changes
 add_action('upgrader_process_complete', function($upgrader, $hook_extra) {
     if (isset($hook_extra['type']) && $hook_extra['type'] === 'plugin') {
+        ckc_clear_release_cache();
         ckc_send_inventory();
     }
 }, 10, 2);
@@ -152,7 +153,12 @@ function ckc_heartbeat() {
     ));
 }
 
+function ckc_clear_release_cache() {
+    delete_site_transient('ckc_latest_release_info');
+}
+
 function ckc_on_activation() {
+    ckc_clear_release_cache();
     ckc_register();
     if (!wp_next_scheduled('ckc_daily_heartbeat')) {
         wp_schedule_event(time() + 300, 'daily', 'ckc_daily_heartbeat');
@@ -160,6 +166,7 @@ function ckc_on_activation() {
 }
 
 function ckc_on_deactivation() {
+    ckc_clear_release_cache();
     wp_clear_scheduled_hook('ckc_daily_heartbeat');
     ckc_post('/deregister', array(
         'siteUrl' => get_site_url(),
