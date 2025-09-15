@@ -16,6 +16,18 @@ if (!defined('CHURCHKITE_ADMIN_URL')) {
 register_activation_hook(__FILE__, 'ckc_on_activation');
 register_deactivation_hook(__FILE__, 'ckc_on_deactivation');
 add_action('rest_api_init', 'ckc_register_proof_route');
+add_action('rest_api_init', function() {
+    register_rest_route('churchkite/v1', '/clear-release-cache', array(
+        'methods' => 'POST',
+        'permission_callback' => function() {
+            return current_user_can('manage_options');
+        },
+        'callback' => function() {
+            delete_site_transient('ckc_latest_release_info');
+            return new WP_REST_Response(array('ok' => true, 'message' => 'Release cache cleared'), 200);
+        }
+    ));
+});
 add_action('ckc_daily_heartbeat', 'ckc_heartbeat');
 // Refresh inventory on plugin changes
 add_action('upgrader_process_complete', function($upgrader, $hook_extra) {
