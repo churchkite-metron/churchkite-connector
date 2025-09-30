@@ -13,6 +13,18 @@ if (!defined('CHURCHKITE_ADMIN_URL')) {
     define('CHURCHKITE_ADMIN_URL', 'https://churchkite-plugin-admin.netlify.app');
 }
 
+if (!defined('CKC_INVENTORY_RETRY_HOOK')) {
+    define('CKC_INVENTORY_RETRY_HOOK', 'ckc_inventory_retry');
+}
+
+if (!defined('CKC_INVENTORY_RETRY_OPTION')) {
+    define('CKC_INVENTORY_RETRY_OPTION', 'ckc_inventory_retry_attempts');
+}
+
+if (!defined('CKC_INVENTORY_RETRY_MAX_ATTEMPTS')) {
+    define('CKC_INVENTORY_RETRY_MAX_ATTEMPTS', 5);
+}
+
 register_activation_hook(__FILE__, 'ckc_on_activation');
 register_deactivation_hook(__FILE__, 'ckc_on_deactivation');
 add_action('rest_api_init', 'ckc_register_proof_route');
@@ -29,6 +41,7 @@ add_action('rest_api_init', function() {
     ));
 });
 add_action('ckc_daily_heartbeat', 'ckc_heartbeat');
+add_action(CKC_INVENTORY_RETRY_HOOK, 'ckc_inventory_retry_handler'); // Retry inventory sync until verification succeeds
 // Refresh inventory on plugin changes
 add_action('upgrader_process_complete', function($upgrader, $hook_extra) {
     if (isset($hook_extra['type']) && $hook_extra['type'] === 'plugin') {
@@ -133,10 +146,10 @@ function ckc_register() {
     ckc_send_inventory();
 }
 
-function ckc_send_inventory() {
+function ckc_send_inventory($is_retry = false) {
     $token = ckc_get_token();
     $proof = rest_url('churchkite/v1/proof');
-    ckc_post('/inventory', array(
+    $response = ckc_post('/inventory', array(
         'siteUrl' => get_site_url(),
         'wpVersion' => get_bloginfo('version'),
         'phpVersion' => PHP_VERSION,
@@ -144,6 +157,85 @@ function ckc_send_inventory() {
         'proofEndpoint' => $proof,
         'plugins' => ckc_collect_inventory(),
     ));
+
+    if (!$is_retry) {
+        if (ckc_is_inventory_success($response)) {
+            ckc_finish_inventory_retry();
+        } else {
+            ckc_start_inventory_retry_cycle();
+        }
+    }
+
+    return $response;
+}
+
+function ckc_is_inventory_success($response) {
+    if (is_wp_error($response)) {
+        return false;
+    }
+    $code = wp_remote_retrieve_response_code($response);
+    return is_numeric($code) && $code >= 200 && $code < 300;
+}
+
+function ckc_start_inventory_retry_cycle($delay = 60) {
+    if (!function_exists('wp_schedule_single_event')) {
+        return;
+    }
+    $delay = max(30, (int) $delay);
+    ckc_finish_inventory_retry();
+    update_option(CKC_INVENTORY_RETRY_OPTION, 0, false);
+    wp_schedule_single_event(time() + $delay, CKC_INVENTORY_RETRY_HOOK);
+}
+
+function ckc_finish_inventory_retry($unschedule = true) {
+    if ($unschedule) {
+        ckc_unschedule_inventory_retry();
+    }
+    delete_option(CKC_INVENTORY_RETRY_OPTION);
+}
+
+function ckc_unschedule_inventory_retry() {
+    if (!function_exists('wp_next_scheduled') || !function_exists('wp_unschedule_event')) {
+        return;
+    }
+    $timestamp = wp_next_scheduled(CKC_INVENTORY_RETRY_HOOK);
+    while ($timestamp) {
+        wp_unschedule_event($timestamp, CKC_INVENTORY_RETRY_HOOK);
+        $timestamp = wp_next_scheduled(CKC_INVENTORY_RETRY_HOOK);
+    }
+}
+
+function ckc_inventory_retry_delay_for_attempt($attempt) {
+    $attempt = max(1, (int) $attempt);
+    $delay = $attempt * 60; // back off in 1-minute increments
+    return (int) min(900, max(60, $delay));
+}
+
+function ckc_inventory_retry_handler() {
+    $attempts = (int) get_option(CKC_INVENTORY_RETRY_OPTION, 0);
+    $attempts++;
+    update_option(CKC_INVENTORY_RETRY_OPTION, $attempts, false);
+
+    $response = ckc_send_inventory(true);
+
+    if (ckc_is_inventory_success($response)) {
+        ckc_finish_inventory_retry();
+        return;
+    }
+
+    if ($attempts >= CKC_INVENTORY_RETRY_MAX_ATTEMPTS) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $message = is_wp_error($response)
+                ? $response->get_error_message()
+                : sprintf('Last response code: %s', wp_remote_retrieve_response_code($response));
+            error_log(sprintf('[ChurchKite Connector] Inventory sync failed after %d attempts. %s', $attempts, $message));
+        }
+        ckc_finish_inventory_retry();
+        return;
+    }
+
+    $delay = ckc_inventory_retry_delay_for_attempt($attempts);
+    wp_schedule_single_event(time() + $delay, CKC_INVENTORY_RETRY_HOOK);
 }
 
 function ckc_heartbeat() {
@@ -165,6 +257,7 @@ function ckc_clear_release_cache() {
 
 function ckc_on_activation() {
     ckc_clear_release_cache();
+    ckc_finish_inventory_retry();
     ckc_register();
     if (!wp_next_scheduled('ckc_daily_heartbeat')) {
         wp_schedule_event(time() + 300, 'daily', 'ckc_daily_heartbeat');
@@ -173,6 +266,7 @@ function ckc_on_activation() {
 
 function ckc_on_deactivation() {
     ckc_clear_release_cache();
+    ckc_finish_inventory_retry();
     wp_clear_scheduled_hook('ckc_daily_heartbeat');
     ckc_post('/deregister', array(
         'siteUrl' => get_site_url(),
