@@ -67,6 +67,10 @@ function ckc_get_token() {
     return $t;
 }
 
+function ckc_site_title() {
+    return get_bloginfo('name');
+}
+
 function ckc_endpoint($path) {
     $base = rtrim(CHURCHKITE_ADMIN_URL, '/');
     return $base . '/api/registry' . $path;
@@ -80,7 +84,12 @@ function ckc_register_proof_route() {
             $token = $req->get_param('token');
             $saved = get_option('churchkite_registration_token', '');
             $ok = is_string($token) && $token !== '' && hash_equals($saved, $token);
-            return new \WP_REST_Response(array('ok' => $ok, 'siteUrl' => get_site_url()), $ok ? 200 : 400);
+            // Include site title so Admin can display a friendly name
+            return new \WP_REST_Response(array(
+                'ok' => $ok,
+                'siteUrl' => get_site_url(),
+                'siteTitle' => get_bloginfo('name'),
+            ), $ok ? 200 : 400);
         }
     ));
 }
@@ -137,6 +146,7 @@ function ckc_register() {
     $proof = rest_url('churchkite/v1/proof');
     ckc_post('/register', array(
         'siteUrl' => get_site_url(),
+        'siteTitle' => ckc_site_title(),
         'pluginSlug' => 'churchkite-connector',
         'wpVersion' => get_bloginfo('version'),
         'phpVersion' => PHP_VERSION,
@@ -151,6 +161,7 @@ function ckc_send_inventory($is_retry = false) {
     $proof = rest_url('churchkite/v1/proof');
     $response = ckc_post('/inventory', array(
         'siteUrl' => get_site_url(),
+        'siteTitle' => ckc_site_title(),
         'wpVersion' => get_bloginfo('version'),
         'phpVersion' => PHP_VERSION,
         'token' => $token,
@@ -243,6 +254,7 @@ function ckc_heartbeat() {
     $proof = rest_url('churchkite/v1/proof');
     ckc_post('/heartbeat', array(
         'siteUrl' => get_site_url(),
+        'siteTitle' => ckc_site_title(),
         'pluginSlug' => 'churchkite-connector',
         'wpVersion' => get_bloginfo('version'),
         'phpVersion' => PHP_VERSION,
@@ -270,6 +282,7 @@ function ckc_on_deactivation() {
     wp_clear_scheduled_hook('ckc_daily_heartbeat');
     ckc_post('/deregister', array(
         'siteUrl' => get_site_url(),
+        'siteTitle' => ckc_site_title(),
         'pluginSlug' => 'churchkite-connector',
     ));
 }

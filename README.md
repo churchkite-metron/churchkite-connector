@@ -15,6 +15,26 @@ How it works
 - Registers with Admin and posts plugin inventory to `/api/registry/inventory`
 - Daily heartbeat plus inventory refresh on plugin installs/updates/activations/deactivations
 
+Site title included
+-------------------
+
+The connector now includes the WordPress site title (from `get_bloginfo('name')`) in all registry-related payloads so the Admin dashboard can display a friendly name alongside the site URL. The following fields are now sent to Admin where applicable:
+
+- `siteUrl` — the site URL (unchanged)
+- `siteTitle` — the site title (new)
+
+Example proof response (GET `/wp-json/churchkite/v1/proof?token=...`):
+
+```
+{
+	"ok": true,
+	"siteUrl": "https://example.com",
+	"siteTitle": "Example Church"
+}
+```
+
+Example inventory payload keys include `siteUrl`, `siteTitle`, `wpVersion`, `phpVersion`, `token`, `proofEndpoint`, and `plugins`.
+
 Extensibility
 - Plugins can add richer metadata via `add_filter('churchkite_connector_manifest', ...)` keyed by plugin slug
 
