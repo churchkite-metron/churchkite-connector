@@ -2,12 +2,13 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.1.17
+ * Version: 0.1.18
  * Author: ChurchKite
  * Update URI: https://github.com/churchkite-metron/churchkite-connector
  */
 
 if (!defined('ABSPATH')) exit;
+// Trivial change to trigger release test
 
 if (!defined('CHURCHKITE_ADMIN_URL')) {
     define('CHURCHKITE_ADMIN_URL', 'https://churchkite-plugin-admin.netlify.app');
