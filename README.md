@@ -5,9 +5,12 @@ Installs on each WordPress site to:
 - Send full plugin inventory (core + third‑party like MailPoet/Pods)
 - Send daily heartbeats and refresh inventory on plugin changes
 
-Install
-- Upload/activate this plugin (no settings required)
-- Defaults to admin at https://churchkite-plugin-admin.netlify.app
+## Configuration
+
+The plugin connects to the ChurchKite Admin server to register the site and report plugin inventory.
+
+- **Admin URL**: Defaults to `https://phpstack-962122-6023915.cloudwaysapps.com`
+- **Registry Key**: Optional authentication key for registry endpoints (define `CHURCHKITE_REGISTRY_KEY` constant)
 - Optionally override via `CHURCHKITE_ADMIN_URL` in wp-config.php
 
 How it works

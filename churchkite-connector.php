@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.1.18
+ * Version: 0.2.0
  * Author: ChurchKite
  * Update URI: https://github.com/churchkite-metron/churchkite-connector
  */
@@ -11,7 +11,11 @@ if (!defined('ABSPATH')) exit;
 // Trivial change to trigger release test
 
 if (!defined('CHURCHKITE_ADMIN_URL')) {
-    define('CHURCHKITE_ADMIN_URL', 'https://churchkite-plugin-admin.netlify.app');
+    define('CHURCHKITE_ADMIN_URL', 'https://phpstack-962122-6023915.cloudwaysapps.com');
+}
+
+if (!defined('CHURCHKITE_REGISTRY_KEY')) {
+    define('CHURCHKITE_REGISTRY_KEY', '');
 }
 
 if (!defined('CKC_INVENTORY_RETRY_HOOK')) {
@@ -135,8 +139,19 @@ function ckc_collect_inventory() {
 
 function ckc_post($path, $body) {
     $url = ckc_endpoint($path);
+    $headers = array('Content-Type' => 'application/json');
+    
+    // Add authentication for registry endpoints
+    if (strpos($path, '/register') === 0 || strpos($path, '/heartbeat') === 0 || 
+        strpos($path, '/inventory') === 0 || strpos($path, '/deregister') === 0) {
+        $key = defined('CHURCHKITE_REGISTRY_KEY') ? CHURCHKITE_REGISTRY_KEY : '';
+        if ($key) {
+            $headers['x-registration-key'] = $key;
+        }
+    }
+    
     return wp_remote_post($url, array(
-        'headers' => array('Content-Type' => 'application/json'),
+        'headers' => $headers,
         'body' => wp_json_encode($body),
         'timeout' => 15,
     ));
@@ -305,7 +320,7 @@ add_filter('pre_set_site_transient_update_plugins', 'ckc_ck_managed_updates', 12
 add_filter('plugins_api', 'ckc_ck_plugins_api', 12, 3);
 
 function ckc_admin_base() {
-    return defined('CHURCHKITE_ADMIN_URL') ? rtrim(CHURCHKITE_ADMIN_URL, '/') : 'https://churchkite-plugin-admin.netlify.app';
+    return defined('CHURCHKITE_ADMIN_URL') ? rtrim(CHURCHKITE_ADMIN_URL, '/') : 'https://phpstack-962122-6023915.cloudwaysapps.com';
 }
 
 function ckc_scan_ck_managed() {
