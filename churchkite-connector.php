@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: ChurchKite
  * Update URI: https://github.com/churchkite-metron/churchkite-connector
  */
@@ -62,6 +62,115 @@ add_action('deactivated_plugin', function() {
     ckc_clear_release_cache();
     ckc_send_inventory();
 }, 20, 0);
+
+// Add admin debug page under Tools
+add_action('admin_menu', 'ckc_add_debug_page');
+
+function ckc_add_debug_page() {
+    add_management_page(
+        'ChurchKite Debug',
+        'ChurchKite Debug',
+        'manage_options',
+        'churchkite-debug',
+        'ckc_render_debug_page'
+    );
+}
+
+function ckc_render_debug_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+    
+    echo '<div class="wrap">';
+    echo '<h1>ChurchKite Connector Debug</h1>';
+    
+    // Handle test actions
+    if (isset($_POST['ckc_test_register']) && check_admin_referer('ckc_debug_action')) {
+        echo '<div class="notice notice-info"><h2>Testing Registration...</h2>';
+        $response = ckc_register();
+        echo '<pre>';
+        echo 'Response Code: ' . esc_html(wp_remote_retrieve_response_code($response)) . "\n";
+        echo 'Response Body: ' . esc_html(wp_remote_retrieve_body($response)) . "\n";
+        if (is_wp_error($response)) {
+            echo 'Error: ' . esc_html($response->get_error_message());
+        }
+        echo '</pre></div>';
+    }
+    
+    if (isset($_POST['ckc_test_inventory']) && check_admin_referer('ckc_debug_action')) {
+        echo '<div class="notice notice-info"><h2>Testing Inventory...</h2>';
+        ckc_send_inventory();
+        echo '<p>Inventory sent. Check your admin server at <a href="' . esc_url(CHURCHKITE_ADMIN_URL . '/inventory') . '" target="_blank">Inventory Page</a></p>';
+        echo '</div>';
+    }
+    
+    if (isset($_POST['ckc_test_heartbeat']) && check_admin_referer('ckc_debug_action')) {
+        echo '<div class="notice notice-info"><h2>Testing Heartbeat...</h2>';
+        $response = ckc_heartbeat();
+        echo '<pre>';
+        echo 'Response Code: ' . esc_html(wp_remote_retrieve_response_code($response)) . "\n";
+        echo 'Response Body: ' . esc_html(wp_remote_retrieve_body($response)) . "\n";
+        if (is_wp_error($response)) {
+            echo 'Error: ' . esc_html($response->get_error_message());
+        }
+        echo '</pre></div>';
+    }
+    
+    // Display current settings
+    echo '<h2>Current Configuration</h2>';
+    echo '<table class="widefat" style="max-width: 800px;"><tbody>';
+    echo '<tr><td style="width: 200px;"><strong>Admin Server URL</strong></td><td>' . esc_html(CHURCHKITE_ADMIN_URL) . '</td></tr>';
+    echo '<tr><td><strong>Site URL</strong></td><td>' . esc_html(home_url()) . '</td></tr>';
+    echo '<tr><td><strong>Site Title</strong></td><td>' . esc_html(get_bloginfo('name')) . '</td></tr>';
+    echo '<tr><td><strong>Registration Token</strong></td><td><code>' . esc_html(ckc_get_token()) . '</code></td></tr>';
+    echo '<tr><td><strong>Proof Endpoint</strong></td><td>' . esc_html(rest_url('churchkite/v1/proof')) . '</td></tr>';
+    echo '<tr><td><strong>Registry Key Set</strong></td><td>' . (CHURCHKITE_REGISTRY_KEY ? 'Yes' : 'No') . '</td></tr>';
+    echo '<tr><td><strong>Plugin Version</strong></td><td>' . esc_html(ckc_get_plugin_version()) . '</td></tr>';
+    echo '</tbody></table>';
+    
+    // Display ChurchKite-managed plugins
+    echo '<h2>ChurchKite-Managed Plugins</h2>';
+    $ck_plugins = ckc_scan_ck_managed();
+    if (empty($ck_plugins)) {
+        echo '<p>No ChurchKite-managed plugins found.</p>';
+    } else {
+        echo '<table class="widefat" style="max-width: 800px;"><thead><tr>';
+        echo '<th>Plugin</th><th>Version</th><th>Update URI</th>';
+        echo '</tr></thead><tbody>';
+        foreach ($ck_plugins as $plugin) {
+            echo '<tr>';
+            echo '<td>' . esc_html($plugin['name']) . '</td>';
+            echo '<td>' . esc_html($plugin['version']) . '</td>';
+            echo '<td><code>' . esc_html($plugin['update_uri']) . '</code></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+    }
+    
+    // Test action buttons
+    echo '<h2>Test Actions</h2>';
+    echo '<p>Use these buttons to manually trigger connector actions and see the responses.</p>';
+    
+    echo '<form method="post" style="display:inline-block; margin-right:10px;">';
+    wp_nonce_field('ckc_debug_action');
+    echo '<input type="hidden" name="ckc_test_register" value="1">';
+    submit_button('Test Registration', 'primary', 'submit', false);
+    echo '</form>';
+    
+    echo '<form method="post" style="display:inline-block; margin-right:10px;">';
+    wp_nonce_field('ckc_debug_action');
+    echo '<input type="hidden" name="ckc_test_inventory" value="1">';
+    submit_button('Test Inventory', 'secondary', 'submit', false);
+    echo '</form>';
+    
+    echo '<form method="post" style="display:inline-block;">';
+    wp_nonce_field('ckc_debug_action');
+    echo '<input type="hidden" name="ckc_test_heartbeat" value="1">';
+    submit_button('Test Heartbeat', 'secondary', 'submit', false);
+    echo '</form>';
+    
+    echo '</div>';
+}
 
 function ckc_get_token() {
     $t = get_option('churchkite_registration_token', '');

@@ -1,5 +1,7 @@
 # ChurchKite Connector
 
+**Version:** 0.3.0
+
 Installs on each WordPress site to:
 - Register and verify the site with ChurchKite Admin (no secrets required)
 - Send full plugin inventory (core + third‑party like MailPoet/Pods)
