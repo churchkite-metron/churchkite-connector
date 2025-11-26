@@ -1,0 +1,52 @@
+name: Publish Plugin
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create ZIP
+        run: |
+          SLUG="churchkite-connector"
+          mkdir -p build/$SLUG
+          # Copy files to build directory, excluding git/github/tests
+          rsync -av --exclude='.git*' --exclude='.github' --exclude='build' ./ build/$SLUG/
+          cd build
+          zip -r ../$SLUG.zip $SLUG
+          cd ..
+
+      - name: Upload ZIP
+        run: |
+          curl -X POST ${{ secrets.CHURCHKITE_ADMIN_URL }}/api/updates/upload \
+            -H "x-publish-key: ${{ secrets.CHURCHKITE_PUBLISH_KEY }}" \
+            -F "slug=churchkite-connector" \
+            -F "file=@churchkite-connector.zip"
+
+      - name: Publish Metadata
+        run: |
+          # Escape newlines in changelog for JSON
+          CHANGELOG=$(echo "${{ github.event.release.body }}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+          # Remove outer quotes added by json.dumps as we'll use it inside another json string or just use jq if available
+          # Actually, let's use jq to construct the JSON safely
+          
+          jq -n \
+            --arg slug "churchkite-connector" \
+            --arg version "${{ steps.get_version.outputs.VERSION }}" \
+            --arg url "${{ github.event.release.html_url }}" \
+            --arg changelog "${{ github.event.release.body }}" \
+            '{slug: $slug, version: $version, url: $url, changelog: $changelog}' > payload.json
+
+          curl -X POST ${{ secrets.CHURCHKITE_ADMIN_URL }}/api/updates/publish \
+            -H "Content-Type: application/json" \
+            -H "x-publish-key: ${{ secrets.CHURCHKITE_PUBLISH_KEY }}" \
+            -d @payload.json
