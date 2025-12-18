@@ -48,3 +48,11 @@ Release & Updates
 - CI publishes version metadata to ChurchKite Admin and uploads the ZIP to Admin Blobs.
 - CI verifies Admin download by running `unzip -t` on the served ZIP.
 - Admin functions are configured to return ZIPs in binary mode to avoid corruption.
+
+### Release workflow secrets
+
+The GitHub Actions release workflow publishes to the ChurchKite Admin update server. Configure these repository secrets in GitHub (do not commit secret values):
+
+- `CK_PUBLISH_URL`: `https://<admin-host>/api/updates/publish`
+- `CK_PUBLISH_KEY`: must match the Admin server's `PUBLISH_API_KEY`
+- `CK_ADMIN_VERIFY_URL`: `https://<admin-host>` (no trailing path like `/public`)
