@@ -65,7 +65,7 @@ jobs:
           SLUG="churchkite-connector"
           TAG="${GITHUB_REF_NAME}"
           VER="${TAG#v}"
-          UPLOAD_URL="${PUBLISH_URL/publish/upload/binary}"
+          UPLOAD_URL="${PUBLISH_URL/publish/upload}"
           if [ ! -f "dist/${SLUG}.zip" ]; then echo "Zip not found: dist/${SLUG}.zip"; ls -la dist; exit 1; fi
           curl -sSf -X POST \
             -H "x-publish-key: ${PUBLISH_KEY}" \
