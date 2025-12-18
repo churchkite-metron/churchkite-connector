@@ -67,11 +67,18 @@ jobs:
           VER="${TAG#v}"
           UPLOAD_URL="${PUBLISH_URL/publish/upload}"
           if [ ! -f "dist/${SLUG}.zip" ]; then echo "Zip not found: dist/${SLUG}.zip"; ls -la dist; exit 1; fi
-          curl -sSf -X POST \
+          RESULT=$(curl -sS -w "\n%{http_code}" -X POST \
             -H "x-publish-key: ${PUBLISH_KEY}" \
             -H "Content-Type: application/zip" \
             --data-binary @"dist/${SLUG}.zip" \
-            "${UPLOAD_URL}?slug=${SLUG}&version=${VER}"
+            "${UPLOAD_URL}?slug=${SLUG}&version=${VER}")
+          HTTP_CODE=$(echo "$RESULT" | tail -n1)
+          BODY=$(echo "$RESULT" | sed '$d')
+          echo "Response: $BODY"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Upload failed with status $HTTP_CODE"
+            exit 1
+          fi
       - name: Verify Admin download integrity
         env:
           ADMIN_BASE: ${{ secrets.CK_ADMIN_VERIFY_URL }}
