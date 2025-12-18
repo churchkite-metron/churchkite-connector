@@ -73,9 +73,11 @@ jobs:
             --data-binary @"dist/${SLUG}.zip" \
             "${UPLOAD_URL}?slug=${SLUG}&version=${VER}"
       - name: Verify Admin download integrity
+        env:
+          ADMIN_BASE: ${{ secrets.CK_ADMIN_VERIFY_URL }}
         run: |
           set -e
-          SITE="https://churchkite-plugin-admin.netlify.app"
+          SITE="${ADMIN_BASE:-https://phpstack-962122-6023915.cloudwaysapps.com}"
           curl -sS -D - "$SITE/api/updates/check?slug=churchkite-connector"
           curl -sSf -o /tmp/ckc.zip "$SITE/api/updates/download?slug=churchkite-connector"
           wc -c /tmp/ckc.zip

@@ -2,9 +2,9 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.3.0
+ * Version: 0.4.1
  * Author: ChurchKite
- * Update URI: https://github.com/churchkite-metron/churchkite-connector
+ * Update URI: churchkite://churchkite-connector
  */
 
 if (!defined('ABSPATH')) exit;
@@ -47,10 +47,14 @@ add_action('rest_api_init', function() {
 });
 add_action('ckc_daily_heartbeat', 'ckc_heartbeat');
 add_action(CKC_INVENTORY_RETRY_HOOK, 'ckc_inventory_retry_handler'); // Retry inventory sync until verification succeeds
-// Refresh inventory on plugin changes
+// Refresh inventory on plugin/theme changes
 add_action('upgrader_process_complete', function($upgrader, $hook_extra) {
-    if (isset($hook_extra['type']) && $hook_extra['type'] === 'plugin') {
+    if (!isset($hook_extra['type'])) return;
+    if ($hook_extra['type'] === 'plugin') {
         ckc_clear_release_cache();
+        ckc_send_inventory();
+    }
+    if ($hook_extra['type'] === 'theme') {
         ckc_send_inventory();
     }
 }, 10, 2);
@@ -60,6 +64,9 @@ add_action('activated_plugin', function() {
 }, 20, 0);
 add_action('deactivated_plugin', function() {
     ckc_clear_release_cache();
+    ckc_send_inventory();
+}, 20, 0);
+add_action('switch_theme', function() {
     ckc_send_inventory();
 }, 20, 0);
 
@@ -147,6 +154,24 @@ function ckc_render_debug_page() {
         echo '</tbody></table>';
     }
     
+    echo '<h2>ChurchKite-Managed Themes</h2>';
+    $ck_themes = ckc_scan_ck_managed_themes();
+    if (empty($ck_themes)) {
+        echo '<p>No ChurchKite-managed themes found.</p>';
+    } else {
+        echo '<table class="widefat" style="max-width: 800px;"><thead><tr>';
+        echo '<th>Theme</th><th>Version</th><th>Update URI</th>';
+        echo '</tr></thead><tbody>';
+        foreach ($ck_themes as $theme) {
+            echo '<tr>';
+            echo '<td>' . esc_html($theme['name']) . '</td>';
+            echo '<td>' . esc_html($theme['version']) . '</td>';
+            echo '<td><code>churchkite://' . esc_html($theme['slug']) . '</code></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+    }
+
     // Test action buttons
     echo '<h2>Test Actions</h2>';
     echo '<p>Use these buttons to manually trigger connector actions and see the responses.</p>';
@@ -246,6 +271,35 @@ function ckc_collect_inventory() {
     return $out;
 }
 
+function ckc_collect_themes() {
+    if (!function_exists('wp_get_themes')) require_once ABSPATH . 'wp-includes/theme.php';
+    $themes = wp_get_themes();
+    $active = wp_get_theme();
+    $active_slug = $active ? $active->get_stylesheet() : '';
+    $updates = get_site_transient('update_themes');
+    $updatesResp = is_object($updates) && isset($updates->response) ? $updates->response : array();
+
+    $out = array();
+    foreach ($themes as $slug => $theme) {
+        $parent = $theme->parent();
+        $item = array(
+            'slug' => $slug,
+            'name' => $theme->get('Name') ?: $slug,
+            'version' => $theme->get('Version'),
+            'active' => strtolower($slug) === strtolower($active_slug),
+            'parent' => $parent ? $parent->get_stylesheet() : '',
+            'updateUri' => trim((string) $theme->get('UpdateURI')),
+        );
+        if (isset($updatesResp[$slug])) {
+            $item['updateAvailable'] = true;
+            $item['newVersion'] = isset($updatesResp[$slug]['new_version']) ? $updatesResp[$slug]['new_version'] : null;
+        }
+        $out[] = $item;
+    }
+
+    return $out;
+}
+
 function ckc_post($path, $body) {
     $url = ckc_endpoint($path);
     $headers = array('Content-Type' => 'application/json');
@@ -292,6 +346,7 @@ function ckc_send_inventory($is_retry = false) {
         'token' => $token,
         'proofEndpoint' => $proof,
         'plugins' => ckc_collect_inventory(),
+        'themes' => ckc_collect_themes(),
     ));
 
     if (!$is_retry) {
@@ -427,6 +482,9 @@ function ckc_get_plugin_version() {
 // --- Centralized updater for ChurchKite-managed and GitHub-declared plugins ---
 add_filter('pre_set_site_transient_update_plugins', 'ckc_ck_managed_updates', 12);
 add_filter('plugins_api', 'ckc_ck_plugins_api', 12, 3);
+// --- ChurchKite-managed themes ---
+add_filter('pre_set_site_transient_update_themes', 'ckc_ck_managed_theme_updates', 12);
+add_filter('themes_api', 'ckc_ck_themes_api', 12, 3);
 
 function ckc_admin_base() {
     return defined('CHURCHKITE_ADMIN_URL') ? rtrim(CHURCHKITE_ADMIN_URL, '/') : 'https://phpstack-962122-6023915.cloudwaysapps.com';
@@ -445,6 +503,23 @@ function ckc_scan_ck_managed() {
                 'slug'    => $slug,
                 'name'    => isset($data['Name']) ? $data['Name'] : $slug,
                 'version' => isset($data['Version']) ? $data['Version'] : '',
+            );
+        }
+    }
+    return $out;
+}
+
+function ckc_scan_ck_managed_themes() {
+    if (!function_exists('wp_get_themes')) require_once ABSPATH . 'wp-includes/theme.php';
+    $themes = wp_get_themes();
+    $out = array();
+    foreach ($themes as $slug => $theme) {
+        $uri = trim((string) $theme->get('UpdateURI'));
+        if ($uri && stripos($uri, 'churchkite://') === 0) {
+            $out[$slug] = array(
+                'slug'    => $slug,
+                'name'    => $theme->get('Name') ?: $slug,
+                'version' => $theme->get('Version'),
             );
         }
     }
@@ -478,6 +553,27 @@ function ckc_ck_managed_updates($transient) {
     return $transient;
 }
 
+function ckc_ck_managed_theme_updates($transient) {
+    if (empty($transient) || !is_object($transient)) return $transient;
+    if (!isset($transient->response) || !is_array($transient->response)) {
+        $transient->response = array();
+    }
+    $managed = ckc_scan_ck_managed_themes();
+    foreach ($managed as $slug => $t) {
+        $info = ckc_ck_check($slug);
+        if (!$info || empty($info['version'])) continue;
+        if (version_compare($info['version'], $t['version'], '>')) {
+            $transient->response[$slug] = array(
+                'theme'       => $slug,
+                'new_version' => $info['version'],
+                'url'         => isset($info['url']) ? $info['url'] : '',
+                'package'     => isset($info['download']) ? $info['download'] : '',
+            );
+        }
+    }
+    return $transient;
+}
+
 function ckc_ck_plugins_api($result, $action, $args) {
     if ($action !== 'plugin_information' || empty($args->slug)) return $result;
     $managed = ckc_scan_ck_managed();
@@ -496,6 +592,29 @@ function ckc_ck_plugins_api($result, $action, $args) {
         ),
         'download_link'=> isset($info['download']) ? $info['download'] : '',
         'homepage'     => isset($info['url']) ? $info['url'] : '',
+    );
+}
+
+function ckc_ck_themes_api($result, $action, $args) {
+    if ($action !== 'theme_information' || empty($args->slug)) return $result;
+    $managed = ckc_scan_ck_managed_themes();
+    if (!isset($managed[$args->slug])) return $result;
+    $t = $managed[$args->slug];
+    $info = ckc_ck_check($args->slug);
+    $version = $info && !empty($info['version']) ? $info['version'] : $t['version'];
+    return (object) array(
+        'name'         => $t['name'],
+        'slug'         => $args->slug,
+        'version'      => $version,
+        'author'       => '<a href="https://github.com/churchkite-metron">ChurchKite</a>',
+        'sections'     => array(
+            'description' => 'Managed by ChurchKite',
+            'changelog'   => isset($info['changelog']) ? wp_kses_post(nl2br($info['changelog'])) : '',
+        ),
+        'download_link'=> isset($info['download']) ? $info['download'] : '',
+        'homepage'     => isset($info['url']) ? $info['url'] : '',
+        'requires'     => isset($info['requires']) ? $info['requires'] : '',
+        'requires_php' => isset($info['requires_php']) ? $info['requires_php'] : '',
     );
 }
 
