@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.4.7
+ * Version: 0.4.8
  * Author: ChurchKite
  * Update URI: churchkite://churchkite-connector
  */
@@ -214,13 +214,16 @@ function ckc_render_debug_page() {
         echo '<p>No ChurchKite-managed themes found.</p>';
     } else {
         echo '<table class="widefat" style="max-width: 800px;"><thead><tr>';
-        echo '<th>Theme</th><th>Version</th><th>Update URI</th>';
+        echo '<th>Theme</th><th>Version</th><th>Update URI</th><th>Update Check</th>';
         echo '</tr></thead><tbody>';
-        foreach ($ck_themes as $theme) {
+        foreach ($ck_themes as $slug => $theme) {
+            $check_info = ckc_ck_check($slug);
+            $check_status = $check_info ? 'v' . ($check_info['version'] ?? '?') : 'Failed';
             echo '<tr>';
-            echo '<td>' . esc_html($theme['name']) . '</td>';
+            echo '<td>' . esc_html($theme['name']) . '<br><small><code>' . esc_html($slug) . '</code></small></td>';
             echo '<td>' . esc_html($theme['version']) . '</td>';
-            echo '<td><code>churchkite://' . esc_html($theme['slug']) . '</code></td>';
+            echo '<td><code>' . esc_html($theme['update_uri']) . '</code></td>';
+            echo '<td>' . esc_html($check_status) . '</td>';
             echo '</tr>';
         }
         echo '</tbody></table>';
