@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.4.1
+ * Version: 0.4.5
  * Author: ChurchKite
  * Update URI: churchkite://churchkite-connector
  */
@@ -133,6 +133,52 @@ function ckc_render_debug_page() {
     echo '<tr><td><strong>Proof Endpoint</strong></td><td>' . esc_html(rest_url('churchkite/v1/proof')) . '</td></tr>';
     echo '<tr><td><strong>Registry Key Set</strong></td><td>' . (CHURCHKITE_REGISTRY_KEY ? 'Yes' : 'No') . '</td></tr>';
     echo '<tr><td><strong>Plugin Version</strong></td><td>' . esc_html(ckc_get_plugin_version()) . '</td></tr>';
+    echo '</tbody></table>';
+
+    // Update debug for connector itself
+    echo '<h2>Update Debug</h2>';
+    $slug = 'churchkite-connector';
+    $info = ckc_ck_check($slug);
+    $pkg = ckc_ck_download_url($slug, $info);
+    $adminDownload = (is_array($info) && isset($info['download']) && is_string($info['download'])) ? trim($info['download']) : '';
+    $adminHost = wp_parse_url(ckc_admin_base(), PHP_URL_HOST);
+    $blockExternal = defined('WP_HTTP_BLOCK_EXTERNAL') ? var_export(WP_HTTP_BLOCK_EXTERNAL, true) : '(not defined)';
+    $accessibleHosts = defined('WP_ACCESSIBLE_HOSTS') ? (string) WP_ACCESSIBLE_HOSTS : '(not defined)';
+
+    echo '<table class="widefat" style="max-width: 800px;"><tbody>';
+    echo '<tr><td style="width: 200px;"><strong>Admin host</strong></td><td><code>' . esc_html($adminHost ?: '(unknown)') . '</code></td></tr>';
+    echo '<tr><td><strong>WP_HTTP_BLOCK_EXTERNAL</strong></td><td><code>' . esc_html($blockExternal) . '</code></td></tr>';
+    echo '<tr><td><strong>WP_ACCESSIBLE_HOSTS</strong></td><td><code>' . esc_html($accessibleHosts) . '</code></td></tr>';
+    echo '<tr><td style="width: 200px;"><strong>Admin check JSON</strong></td><td><pre style="white-space:pre-wrap;">' . esc_html(wp_json_encode($info, JSON_PRETTY_PRINT)) . '</pre></td></tr>';
+    echo '<tr><td><strong>Admin download</strong></td><td><code>' . esc_html($adminDownload ?: '(none)') . '</code></td></tr>';
+    echo '<tr><td><strong>Computed package</strong></td><td><code>' . esc_html($pkg ?: '(empty)') . '</code></td></tr>';
+    echo '<tr><td><strong>wp_http_validate_url()</strong></td><td><code>' . esc_html(var_export((bool) wp_http_validate_url($pkg), true)) . '</code></td></tr>';
+
+    $headStatus = '';
+    $head = $pkg ? wp_remote_head($pkg, array('timeout' => 15, 'redirection' => 3)) : null;
+    if (!$pkg) {
+        $headStatus = '(no package URL)';
+    } elseif (is_wp_error($head)) {
+        $headStatus = $head->get_error_message();
+    } else {
+        $headStatus = (string) wp_remote_retrieve_response_code($head);
+    }
+    echo '<tr><td><strong>HEAD status</strong></td><td><code>' . esc_html($headStatus) . '</code></td></tr>';
+
+    $safeHeadStatus = '';
+    if (!$pkg) {
+        $safeHeadStatus = '(no package URL)';
+    } elseif (!function_exists('wp_safe_remote_head')) {
+        $safeHeadStatus = '(wp_safe_remote_head unavailable)';
+    } else {
+        $safeHead = wp_safe_remote_head($pkg, array('timeout' => 15, 'redirection' => 3));
+        if (is_wp_error($safeHead)) {
+            $safeHeadStatus = $safeHead->get_error_message();
+        } else {
+            $safeHeadStatus = (string) wp_remote_retrieve_response_code($safeHead);
+        }
+    }
+    echo '<tr><td><strong>Safe HEAD status</strong></td><td><code>' . esc_html($safeHeadStatus) . '</code></td></tr>';
     echo '</tbody></table>';
     
     // Display ChurchKite-managed plugins
@@ -323,7 +369,7 @@ function ckc_post($path, $body) {
 function ckc_register() {
     $token = ckc_get_token();
     $proof = rest_url('churchkite/v1/proof');
-    ckc_post('/register', array(
+    $response = ckc_post('/register', array(
         'siteUrl' => get_site_url(),
         'siteTitle' => ckc_site_title(),
         'pluginSlug' => 'churchkite-connector',
@@ -333,6 +379,7 @@ function ckc_register() {
         'proofEndpoint' => $proof,
     ));
     ckc_send_inventory();
+    return $response;
 }
 
 function ckc_send_inventory($is_retry = false) {
@@ -432,7 +479,7 @@ function ckc_inventory_retry_handler() {
 function ckc_heartbeat() {
     $token = ckc_get_token();
     $proof = rest_url('churchkite/v1/proof');
-    ckc_post('/heartbeat', array(
+    return ckc_post('/heartbeat', array(
         'siteUrl' => get_site_url(),
         'siteTitle' => ckc_site_title(),
         'pluginSlug' => 'churchkite-connector',
@@ -486,6 +533,21 @@ add_filter('plugins_api', 'ckc_ck_plugins_api', 12, 3);
 add_filter('pre_set_site_transient_update_themes', 'ckc_ck_managed_theme_updates', 12);
 add_filter('themes_api', 'ckc_ck_themes_api', 12, 3);
 
+// Allow WordPress "safe" HTTP requests to the configured ChurchKite Admin host.
+// This prevents update downloads failing with "A valid URL was not provided" when
+// a site blocks external HTTP requests via WP_HTTP_BLOCK_EXTERNAL.
+add_filter('http_request_host_is_external', 'ckc_allow_admin_http_host', 10, 2);
+
+function ckc_allow_admin_http_host($is_external, $host) {
+    $adminHost = wp_parse_url(ckc_admin_base(), PHP_URL_HOST);
+    if (is_string($adminHost) && $adminHost !== '' && is_string($host) && $host !== '') {
+        if (strtolower($host) === strtolower($adminHost)) {
+            return true;
+        }
+    }
+    return $is_external;
+}
+
 function ckc_admin_base() {
     return defined('CHURCHKITE_ADMIN_URL') ? rtrim(CHURCHKITE_ADMIN_URL, '/') : 'https://phpstack-962122-6023915.cloudwaysapps.com';
 }
@@ -503,6 +565,7 @@ function ckc_scan_ck_managed() {
                 'slug'    => $slug,
                 'name'    => isset($data['Name']) ? $data['Name'] : $slug,
                 'version' => isset($data['Version']) ? $data['Version'] : '',
+                'update_uri' => $uri,
             );
         }
     }
@@ -520,6 +583,7 @@ function ckc_scan_ck_managed_themes() {
                 'slug'    => $slug,
                 'name'    => $theme->get('Name') ?: $slug,
                 'version' => $theme->get('Version'),
+                'update_uri' => $uri,
             );
         }
     }
@@ -534,6 +598,32 @@ function ckc_ck_check($slug) {
     return is_array($data) ? $data : null;
 }
 
+function ckc_ck_download_url($slug, $info = null) {
+    $base = ckc_admin_base();
+    $fallback = $base . '/api/updates/download?slug=' . rawurlencode($slug);
+
+    $download = '';
+    if (is_array($info) && isset($info['download']) && is_string($info['download'])) {
+        $download = trim($info['download']);
+    }
+
+    if ($download === '') {
+        return esc_url_raw($fallback);
+    }
+
+    // Relative URL -> make absolute.
+    if (strpos($download, '/') === 0) {
+        $download = $base . $download;
+    }
+
+    $safe = esc_url_raw($download);
+    if (!$safe) {
+        return esc_url_raw($fallback);
+    }
+
+    return $safe;
+}
+
 function ckc_ck_managed_updates($transient) {
     if (empty($transient) || !is_object($transient)) return $transient;
     $managed = ckc_scan_ck_managed();
@@ -541,12 +631,13 @@ function ckc_ck_managed_updates($transient) {
         $info = ckc_ck_check($slug);
         if (!$info || empty($info['version'])) continue;
         if (version_compare($info['version'], $p['version'], '>')) {
+            $pkg = ckc_ck_download_url($slug, $info);
             $transient->response[$p['file']] = (object) array(
                 'slug'        => $slug,
                 'plugin'      => $p['file'],
                 'new_version' => $info['version'],
                 'url'         => isset($info['url']) ? $info['url'] : '',
-                'package'     => isset($info['download']) ? $info['download'] : '',
+                'package'     => $pkg,
             );
         }
     }
@@ -563,11 +654,12 @@ function ckc_ck_managed_theme_updates($transient) {
         $info = ckc_ck_check($slug);
         if (!$info || empty($info['version'])) continue;
         if (version_compare($info['version'], $t['version'], '>')) {
+            $pkg = ckc_ck_download_url($slug, $info);
             $transient->response[$slug] = array(
                 'theme'       => $slug,
                 'new_version' => $info['version'],
                 'url'         => isset($info['url']) ? $info['url'] : '',
-                'package'     => isset($info['download']) ? $info['download'] : '',
+                'package'     => $pkg,
             );
         }
     }
@@ -581,6 +673,7 @@ function ckc_ck_plugins_api($result, $action, $args) {
     $p = $managed[$args->slug];
     $info = ckc_ck_check($args->slug);
     $version = $info && !empty($info['version']) ? $info['version'] : $p['version'];
+    $pkg = ckc_ck_download_url($args->slug, $info);
     return (object) array(
         'name'         => $p['name'],
         'slug'         => $args->slug,
@@ -590,7 +683,7 @@ function ckc_ck_plugins_api($result, $action, $args) {
             'description' => 'Managed by ChurchKite',
             'changelog'   => isset($info['changelog']) ? wp_kses_post(nl2br($info['changelog'])) : '',
         ),
-        'download_link'=> isset($info['download']) ? $info['download'] : '',
+        'download_link'=> $pkg,
         'homepage'     => isset($info['url']) ? $info['url'] : '',
     );
 }
@@ -602,6 +695,7 @@ function ckc_ck_themes_api($result, $action, $args) {
     $t = $managed[$args->slug];
     $info = ckc_ck_check($args->slug);
     $version = $info && !empty($info['version']) ? $info['version'] : $t['version'];
+    $pkg = ckc_ck_download_url($args->slug, $info);
     return (object) array(
         'name'         => $t['name'],
         'slug'         => $args->slug,
@@ -611,7 +705,7 @@ function ckc_ck_themes_api($result, $action, $args) {
             'description' => 'Managed by ChurchKite',
             'changelog'   => isset($info['changelog']) ? wp_kses_post(nl2br($info['changelog'])) : '',
         ),
-        'download_link'=> isset($info['download']) ? $info['download'] : '',
+        'download_link'=> $pkg,
         'homepage'     => isset($info['url']) ? $info['url'] : '',
         'requires'     => isset($info['requires']) ? $info['requires'] : '',
         'requires_php' => isset($info['requires_php']) ? $info['requires_php'] : '',
@@ -660,12 +754,13 @@ function ckc_check_for_update($transient) {
     // Prefer Admin-managed updates for the connector
     $adminInfo = ckc_ck_check('churchkite-connector');
     if (is_array($adminInfo) && !empty($adminInfo['version']) && version_compare($adminInfo['version'], $current, '>')) {
+        $pkg = ckc_ck_download_url('churchkite-connector', $adminInfo);
         $transient->response[$plugin_file] = (object) array(
             'slug'        => 'churchkite-connector',
             'plugin'      => $plugin_file,
             'new_version' => $adminInfo['version'],
             'url'         => isset($adminInfo['url']) ? $adminInfo['url'] : '',
-            'package'     => isset($adminInfo['download']) ? $adminInfo['download'] : '',
+            'package'     => $pkg,
         );
         return $transient;
     }
@@ -689,6 +784,7 @@ function ckc_plugins_api($result, $action, $args) {
     $current = ckc_get_plugin_version();
     $adminInfo = ckc_ck_check('churchkite-connector');
     if (is_array($adminInfo) && !empty($adminInfo['version'])) {
+        $pkg = ckc_ck_download_url('churchkite-connector', $adminInfo);
         return (object) array(
             'name'         => 'ChurchKite Connector',
             'slug'         => 'churchkite-connector',
@@ -698,7 +794,7 @@ function ckc_plugins_api($result, $action, $args) {
                 'description' => 'Registers/verifies the site with ChurchKite Admin and reports plugin inventory and heartbeats.',
                 'changelog'   => isset($adminInfo['changelog']) ? wp_kses_post(nl2br($adminInfo['changelog'])) : '',
             ),
-            'download_link'=> isset($adminInfo['download']) ? $adminInfo['download'] : '',
+            'download_link'=> $pkg,
             'homepage'     => isset($adminInfo['url']) ? $adminInfo['url'] : 'https://github.com/churchkite-metron/churchkite-connector',
         );
     }
