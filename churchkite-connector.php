@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.4.5
+ * Version: 0.4.6
  * Author: ChurchKite
  * Update URI: churchkite://churchkite-connector
  */
@@ -92,6 +92,14 @@ function ckc_render_debug_page() {
     echo '<h1>ChurchKite Connector Debug</h1>';
     
     // Handle test actions
+    if (isset($_POST['ckc_force_update_check']) && check_admin_referer('ckc_debug_action')) {
+        delete_site_transient('update_themes');
+        delete_site_transient('update_plugins');
+        wp_update_themes();
+        wp_update_plugins();
+        echo '<div class="notice notice-success"><p><strong>Update check forced!</strong> Transients cleared and update checks triggered. <a href="' . admin_url('update-core.php') . '">Go to Updates page</a></p></div>';
+    }
+    
     if (isset($_POST['ckc_test_register']) && check_admin_referer('ckc_debug_action')) {
         echo '<div class="notice notice-info"><h2>Testing Registration...</h2>';
         $response = ckc_register();
@@ -216,8 +224,14 @@ function ckc_render_debug_page() {
             echo '</tr>';
         }
         echo '</tbody></table>';
-    }
-
+    }force_update_check" value="1">';
+    submit_button('Force Update Check', 'primary', 'submit', false);
+    echo '</form>';
+    
+    echo '<form method="post" style="display:inline-block; margin-right:10px;">';
+    wp_nonce_field('ckc_debug_action');
+    echo '<input type="hidden" name="ckc_test_register" value="1">';
+    submit_button('Test Registration', 'second
     // Test action buttons
     echo '<h2>Test Actions</h2>';
     echo '<p>Use these buttons to manually trigger connector actions and see the responses.</p>';
@@ -632,13 +646,17 @@ function ckc_ck_managed_updates($transient) {
         if (!$info || empty($info['version'])) continue;
         if (version_compare($info['version'], $p['version'], '>')) {
             $pkg = ckc_ck_download_url($slug, $info);
-            $transient->response[$p['file']] = (object) array(
+            $response_obj = (object) array(
                 'slug'        => $slug,
                 'plugin'      => $p['file'],
                 'new_version' => $info['version'],
                 'url'         => isset($info['url']) ? $info['url'] : '',
                 'package'     => $pkg,
             );
+            if (isset($info['icons']) && is_array($info['icons'])) {
+                $response_obj->icons = $info['icons'];
+            }
+            $transient->response[$p['file']] = $response_obj;
         }
     }
     return $transient;
@@ -674,7 +692,7 @@ function ckc_ck_plugins_api($result, $action, $args) {
     $info = ckc_ck_check($args->slug);
     $version = $info && !empty($info['version']) ? $info['version'] : $p['version'];
     $pkg = ckc_ck_download_url($args->slug, $info);
-    return (object) array(
+    $result_obj = (object) array(
         'name'         => $p['name'],
         'slug'         => $args->slug,
         'version'      => $version,
@@ -686,6 +704,10 @@ function ckc_ck_plugins_api($result, $action, $args) {
         'download_link'=> $pkg,
         'homepage'     => isset($info['url']) ? $info['url'] : '',
     );
+    if ($info && isset($info['icons']) && is_array($info['icons'])) {
+        $result_obj->icons = $info['icons'];
+    }
+    return $result_obj;
 }
 
 function ckc_ck_themes_api($result, $action, $args) {
@@ -755,13 +777,17 @@ function ckc_check_for_update($transient) {
     $adminInfo = ckc_ck_check('churchkite-connector');
     if (is_array($adminInfo) && !empty($adminInfo['version']) && version_compare($adminInfo['version'], $current, '>')) {
         $pkg = ckc_ck_download_url('churchkite-connector', $adminInfo);
-        $transient->response[$plugin_file] = (object) array(
+        $response_obj = (object) array(
             'slug'        => 'churchkite-connector',
             'plugin'      => $plugin_file,
             'new_version' => $adminInfo['version'],
             'url'         => isset($adminInfo['url']) ? $adminInfo['url'] : '',
             'package'     => $pkg,
         );
+        if (isset($adminInfo['icons']) && is_array($adminInfo['icons'])) {
+            $response_obj->icons = $adminInfo['icons'];
+        }
+        $transient->response[$plugin_file] = $response_obj;
         return $transient;
     }
     // Fallback to GitHub latest release if Admin not available
@@ -785,7 +811,7 @@ function ckc_plugins_api($result, $action, $args) {
     $adminInfo = ckc_ck_check('churchkite-connector');
     if (is_array($adminInfo) && !empty($adminInfo['version'])) {
         $pkg = ckc_ck_download_url('churchkite-connector', $adminInfo);
-        return (object) array(
+        $result_obj = (object) array(
             'name'         => 'ChurchKite Connector',
             'slug'         => 'churchkite-connector',
             'version'      => $adminInfo['version'],
@@ -797,6 +823,10 @@ function ckc_plugins_api($result, $action, $args) {
             'download_link'=> $pkg,
             'homepage'     => isset($adminInfo['url']) ? $adminInfo['url'] : 'https://github.com/churchkite-metron/churchkite-connector',
         );
+        if (isset($adminInfo['icons']) && is_array($adminInfo['icons'])) {
+            $result_obj->icons = $adminInfo['icons'];
+        }
+        return $result_obj;
     }
     $latest = ckc_latest_release();
     return (object) array(
