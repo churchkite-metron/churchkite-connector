@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.4.6
+ * Version: 0.4.7
  * Author: ChurchKite
  * Update URI: churchkite://churchkite-connector
  */
@@ -224,22 +224,22 @@ function ckc_render_debug_page() {
             echo '</tr>';
         }
         echo '</tbody></table>';
-    }force_update_check" value="1">';
-    submit_button('Force Update Check', 'primary', 'submit', false);
-    echo '</form>';
-    
-    echo '<form method="post" style="display:inline-block; margin-right:10px;">';
-    wp_nonce_field('ckc_debug_action');
-    echo '<input type="hidden" name="ckc_test_register" value="1">';
-    submit_button('Test Registration', 'second
+    }
+
     // Test action buttons
     echo '<h2>Test Actions</h2>';
     echo '<p>Use these buttons to manually trigger connector actions and see the responses.</p>';
     
     echo '<form method="post" style="display:inline-block; margin-right:10px;">';
     wp_nonce_field('ckc_debug_action');
+    echo '<input type="hidden" name="ckc_force_update_check" value="1">';
+    submit_button('Force Update Check', 'primary', 'submit', false);
+    echo '</form>';
+    
+    echo '<form method="post" style="display:inline-block; margin-right:10px;">';
+    wp_nonce_field('ckc_debug_action');
     echo '<input type="hidden" name="ckc_test_register" value="1">';
-    submit_button('Test Registration', 'primary', 'submit', false);
+    submit_button('Test Registration', 'secondary', 'submit', false);
     echo '</form>';
     
     echo '<form method="post" style="display:inline-block; margin-right:10px;">';
