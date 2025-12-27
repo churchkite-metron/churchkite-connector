@@ -1,6 +1,6 @@
 # ChurchKite Connector
 
-**Version:** 0.3.0
+**Version:** 0.4.10
 
 Installs on each WordPress site to:
 - Register and verify the site with ChurchKite Admin (no secrets required)
@@ -44,7 +44,7 @@ Extensibility
 - Plugins can add richer metadata via `add_filter('churchkite_connector_manifest', ...)` keyed by plugin slug
 
 Release & Updates
-- Tag as `vX.Y.Z` to build `dist/churchkite-connector.zip` and create a GitHub Release.
+- Tag as `vX.Y` or `vX.Y.Z` to build `dist/churchkite-connector.zip` and create a GitHub Release.
 - CI publishes version metadata to ChurchKite Admin and uploads the ZIP to Admin Blobs.
 - CI verifies Admin download by running `unzip -t` on the served ZIP.
 - Admin functions are configured to return ZIPs in binary mode to avoid corruption.
