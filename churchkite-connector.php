@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ChurchKite Connector
  * Description: Registers and verifies the site with ChurchKite Admin and reports plugin inventory + heartbeats.
- * Version: 0.4.8
+ * Version: 0.4.9
  * Author: ChurchKite
  * Update URI: churchkite://churchkite-connector
  */
