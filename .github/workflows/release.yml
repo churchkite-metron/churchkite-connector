@@ -3,6 +3,7 @@ name: release-zip
 on:
   push:
     tags:
+      - 'v*.*'
       - 'v*.*.*'
 
 permissions:
