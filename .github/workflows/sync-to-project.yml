@@ -1,6 +1,6 @@
 # sync-to-project.yml
 # Adds issues to Project and dynamically sets Pillar based on Repo Topics
-# Version: 1.1.0
+# Version: 1.2.0 (Direct Topic Match)
 # ------------------------------------------------
 # PROJECT METADATA REFERENCE
 # Project: #12 (churchkite-metron)
@@ -17,7 +17,6 @@ jobs:
   triage:
     runs-on: ubuntu-latest
     env:
-      # Moving token to job level for broader access
       GH_TOKEN: ${{ secrets.GH_PROJECT_PAT }}
       PROJECT_ID: "PVT_kwDOC_W5-c4BLOYo"
       FIELD_ID: "PVTSSF_lADOC_W5-c4BLOYozg63fEA"
@@ -52,25 +51,24 @@ jobs:
               }
             }' -f project_id="$PROJECT_ID" --jq '.data.node.field.options')
 
-          # 4. Search for a match (The Truly Dynamic Part)
+          # 4. Search for a direct match
           MATCHING_OPTION_ID=""
           for TOPIC in $TOPICS; do
-            # Convert "wp-product" -> "WP Product" or "meta" -> "Meta"
-            # This makes the matching case-insensitive and space-friendly
-            FORMATTED_TOPIC=$(echo "$TOPIC" | sed -r 's/(^|-)([a-z])/\1\U\2/g' | sed 's/-/ /g' | sed 's/Wp/WP/g')
+            echo "Checking if topic '$TOPIC' exists as a Pillar on the board..."
             
-            echo "Checking if '$FORMATTED_TOPIC' exists on board..."
-            OPTION_ID=$(echo "$PILLAR_OPTIONS" | jq -r ".[] | select(.name == \"$FORMATTED_TOPIC\") | .id")
+            # Direct match against the board option names
+            OPTION_ID=$(echo "$PILLAR_OPTIONS" | jq -r ".[] | select(.name == \"$TOPIC\") | .id")
             
             if [ "$OPTION_ID" != "" ]; then
               MATCHING_OPTION_ID="$OPTION_ID"
-              echo "✅ Match found: $FORMATTED_TOPIC"
+              echo "✅ Match found: $TOPIC ($OPTION_ID)"
               break
             fi
           done
 
           # 5. Apply the Pillar if a match was found
           if [ -n "$MATCHING_OPTION_ID" ]; then
+            echo "Setting Pillar field..."
             gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$FIELD_ID" --single-select-option-id "$MATCHING_OPTION_ID"
           else
             echo "ℹ️ No repository topics matched a Pillar name. Issue stays in 'No Pillar'."
