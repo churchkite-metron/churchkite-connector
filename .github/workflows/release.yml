@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*.*'
       - 'v*.*.*'
+      - 'v*.*-rc.*'
+      - 'v*.*.*-rc.*'
+      - 'v*.*-beta.*'
+      - 'v*.*.*-beta.*'
 
 permissions:
   contents: write
@@ -38,12 +42,14 @@ jobs:
             const slug = 'churchkite-connector';
             const tag = process.env.GITHUB_REF_NAME || context.ref.replace('refs/tags/','');
             const version = tag.replace(/^v/i,'');
+            const channel = /-(rc|beta)\./i.test(version) ? 'dev' : 'stable';
             const { data: rel } = await github.rest.repos.getReleaseByTag({ owner: context.repo.owner, repo: context.repo.repo, tag });
             const asset = (rel.assets || []).find(a => a.name === 'churchkite-connector.zip');
             if (!asset) core.setFailed('Release asset not found: churchkite-connector.zip');
             const payload = {
               slug,
               version,
+              channel,
               url: rel.html_url,
               assetApiUrl: asset.url,
               changelog: rel.body || '',
@@ -67,13 +73,15 @@ jobs:
           SLUG="churchkite-connector"
           TAG="${GITHUB_REF_NAME}"
           VER="${TAG#v}"
+          CHANNEL="stable"
+          if echo "$VER" | grep -Eiq '\-(rc|beta)\.'; then CHANNEL="dev"; fi
           UPLOAD_URL="${PUBLISH_URL/publish/upload}"
           if [ ! -f "dist/${SLUG}.zip" ]; then echo "Zip not found: dist/${SLUG}.zip"; ls -la dist; exit 1; fi
           RESULT=$(curl -sS -w "\n%{http_code}" -X POST \
             -H "x-publish-key: ${PUBLISH_KEY}" \
             -H "Content-Type: application/zip" \
             --data-binary @"dist/${SLUG}.zip" \
-            "${UPLOAD_URL}?slug=${SLUG}&version=${VER}")
+            "${UPLOAD_URL}?slug=${SLUG}&version=${VER}&channel=${CHANNEL}")
           HTTP_CODE=$(echo "$RESULT" | tail -n1)
           BODY=$(echo "$RESULT" | sed '$d')
           echo "Response: $BODY"
@@ -84,10 +92,15 @@ jobs:
       - name: Verify Admin download integrity
         env:
           ADMIN_BASE: ${{ secrets.CK_ADMIN_VERIFY_URL }}
+          PUBLISH_KEY: ${{ secrets.CK_PUBLISH_KEY }}
         run: |
           set -e
           SITE="${ADMIN_BASE:-https://phpstack-962122-6023915.cloudwaysapps.com}"
-          curl -sS -D - "$SITE/api/updates/check?slug=churchkite-connector"
-          curl -sSf -o /tmp/ckc.zip "$SITE/api/updates/download?slug=churchkite-connector"
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          CHANNEL="stable"
+          if echo "$VER" | grep -Eiq '\-(rc|beta)\.'; then CHANNEL="dev"; fi
+          curl -sS -D - -H "x-publish-key: ${PUBLISH_KEY}" "$SITE/api/updates/check?slug=churchkite-connector&channel=${CHANNEL}"
+          curl -sSf -H "x-publish-key: ${PUBLISH_KEY}" -o /tmp/ckc.zip "$SITE/api/updates/download?slug=churchkite-connector&channel=${CHANNEL}"
           wc -c /tmp/ckc.zip
           unzip -t /tmp/ckc.zip

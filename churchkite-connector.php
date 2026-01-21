@@ -569,6 +569,17 @@ function ckc_admin_base() {
     return defined('CHURCHKITE_ADMIN_URL') ? rtrim(CHURCHKITE_ADMIN_URL, '/') : 'https://phpstack-962122-6023915.cloudwaysapps.com';
 }
 
+function ckc_update_channel() {
+    $raw = null;
+    if (defined('CHURCHKITE_UPDATE_CHANNEL')) {
+        $raw = (string) CHURCHKITE_UPDATE_CHANNEL;
+    } else {
+        $raw = (string) get_option('churchkite_update_channel', 'stable');
+    }
+    $c = strtolower(trim($raw));
+    return $c === 'dev' ? 'dev' : 'stable';
+}
+
 function ckc_scan_ck_managed() {
     if (!function_exists('get_plugins')) require_once ABSPATH . 'wp-admin/includes/plugin.php';
     $plugins = get_plugins();
@@ -608,7 +619,14 @@ function ckc_scan_ck_managed_themes() {
 }
 
 function ckc_ck_check($slug) {
-    $url = ckc_admin_base() . '/api/updates/check?slug=' . rawurlencode($slug);
+    $base = ckc_admin_base();
+    $channel = ckc_update_channel();
+    $url = $base . '/api/updates/check?slug=' . rawurlencode($slug) . '&channel=' . rawurlencode($channel);
+    // Only include site identity + token for dev channel (used for gating dev updates).
+    if ($channel === 'dev') {
+        $url .= '&siteUrl=' . rawurlencode(get_site_url());
+        $url .= '&ckToken=' . rawurlencode(ckc_get_token());
+    }
     $resp = wp_remote_get($url, array('timeout' => 15, 'headers' => array('User-Agent' => 'ChurchKite/Connector')));
     if (is_wp_error($resp) || wp_remote_retrieve_response_code($resp) !== 200) return null;
     $data = json_decode(wp_remote_retrieve_body($resp), true);
@@ -617,7 +635,12 @@ function ckc_ck_check($slug) {
 
 function ckc_ck_download_url($slug, $info = null) {
     $base = ckc_admin_base();
-    $fallback = $base . '/api/updates/download?slug=' . rawurlencode($slug);
+    $channel = ckc_update_channel();
+    $fallback = $base . '/api/updates/download?slug=' . rawurlencode($slug) . '&channel=' . rawurlencode($channel);
+    if ($channel === 'dev') {
+        $fallback .= '&siteUrl=' . rawurlencode(get_site_url());
+        $fallback .= '&ckToken=' . rawurlencode(ckc_get_token());
+    }
 
     $download = '';
     if (is_array($info) && isset($info['download']) && is_string($info['download'])) {
